@@ -268,7 +268,7 @@ const fallProg = prog([
   "  float streak = 0.55 + 0.45 * sin(vUv.y*46.0 + uTime*3.4 + sin(vUv.x*22.0)*0.8);",
   "  float edge = smoothstep(0.0, 0.3, vUv.x) * smoothstep(1.0, 0.7, vUv.x);",
   "  float vert = mix(0.1, 1.0, vUv.y);",
-  "  float a = streak * edge * vert * 0.5;",
+  "  float a = streak * edge * vert * 0.62;",
   "  gl_FragColor = vec4(vec3(0.88, 0.96, 1.0), a);",
   "}"
 ].join("\n"));
@@ -388,7 +388,7 @@ const islands = [];
 function buildIslands(){
   const A = newAcc();
   const falls = [];
-  function island(x, z, y, R){
+  function island(x, z, y, R, forceFall){
     const phase = rnd()*Math.PI*2;
     const topY = y + R*0.5;
     islands.push({ x:x, z:z, y:y, R:R, phase:phase, topY:topY });
@@ -410,6 +410,13 @@ function buildIslands(){
       const g1 = 0.3 + hash2(i*1.3, R)*0.14;
       A.pos.push(cx0, topY+0.3, cz0,  p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2]);
       for(let k=0;k<3;k++){ A.norm.push(0,1,0); A.col.push(0.24, g1+0.28, 0.16); A.phase.push(phase); }
+    }
+    // 草地の側面（厚みを持たせて、横から見たときに線にならないように）
+    for(let i=0;i<SEG;i++){
+      const p1 = ringPts[i], p2 = ringPts[i+1];
+      const q1 = [p1[0], topY-1.35, p1[2]], q2 = [p2[0], topY-1.35, p2[2]];
+      const tris = [[p1,q1,p2],[p2,q1,q2]];
+      for(const tri of tris){ for(const p of tri){ A.pos.push(p[0],p[1],p[2]); A.norm.push(0,0.3,0); A.col.push(0.3,0.34,0.18); A.phase.push(phase); } }
     }
     // 木
     if(R >= 4.6){
@@ -454,18 +461,18 @@ function buildIslands(){
         pushBlob(A, x+Math.cos(fa)*fr, topY+0.32, z+Math.sin(fa)*fr, 0.15, 0.13, 0.15, 0, rnd()*100, phase, function(){ return c; }, 1.0);
       }
     }
-    // 滝（大きめの島だけ）
-    if(R >= 6){
-      const fa = rnd()*Math.PI*2;
+    // 滝（大きめの島。内側の島は外向き＝カメラ側に付ける）
+    if(R >= 6 || (forceFall && R >= 5)){
+      const fa = Math.atan2(z, x);
       falls.push({
         x: x + Math.cos(fa)*R*0.92, z: z + Math.sin(fa)*R*0.92,
         y: topY - 0.4, ang: fa, phase: phase
       });
     }
   }
-  for(let k=0;k<7;k++){ const a = rnd()*Math.PI*2, rad = rr(14,40); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-3,9), rr(4,8)); }
-  for(let k=0;k<8;k++){ const a = rnd()*Math.PI*2, rad = rr(78,135); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-6,12), rr(6,13)); }
-  for(let k=0;k<6;k++){ const a = rnd()*Math.PI*2, rad = rr(150,235); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-10,20), rr(3,6)); }
+  for(let k=0;k<7;k++){ const a = rnd()*Math.PI*2, rad = rr(14,40); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-3,9), rr(4,8), true); }
+  for(let k=0;k<8;k++){ const a = rnd()*Math.PI*2, rad = rr(78,135); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-6,12), rr(6,13), false); }
+  for(let k=0;k<6;k++){ const a = rnd()*Math.PI*2, rad = rr(150,235); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-10,20), rr(3,6), false); }
   return { obj: accObj(isleProg, A), falls: falls };
 }
 /* ---- 雲 ---- */
@@ -493,14 +500,17 @@ function buildClouds(){
 function buildFalls(falls){
   const pos = [], uv = [], ph = [];
   for(const f of falls){
-    const tx = -Math.sin(f.ang), tz = Math.cos(f.ang);
-    const w = 1.25, H = 30;
-    const quad = [
-      [f.x - tx*w, f.y, f.z - tz*w, 0, 1],[f.x + tx*w, f.y, f.z + tz*w, 1, 1],
-      [f.x - tx*w*1.4, f.y - H, f.z - tz*w*1.4, 0, 0],[f.x + tx*w*1.4, f.y - H, f.z + tz*w*1.4, 1, 0]
-    ];
-    const order = [0,2,1, 1,2,3];
-    for(const oi of order){ const q = quad[oi]; pos.push(q[0],q[1],q[2]); uv.push(q[3],q[4]); ph.push(f.phase); }
+    for(let k=0;k<2;k++){
+      const ang2 = f.ang + k*Math.PI/2;
+      const tx = -Math.sin(ang2), tz = Math.cos(ang2);
+      const w = 2.1, H = 30;
+      const quad = [
+        [f.x - tx*w, f.y, f.z - tz*w, 0, 1],[f.x + tx*w, f.y, f.z + tz*w, 1, 1],
+        [f.x - tx*w*1.4, f.y - H, f.z - tz*w*1.4, 0, 0],[f.x + tx*w*1.4, f.y - H, f.z + tz*w*1.4, 1, 0]
+      ];
+      const order = [0,2,1, 1,2,3];
+      for(const oi of order){ const q = quad[oi]; pos.push(q[0],q[1],q[2]); uv.push(q[3],q[4]); ph.push(f.phase); }
+    }
   }
   return makeObj(fallProg, { aPos:pos, aUv:uv, aPhase:ph });
 }
@@ -532,6 +542,14 @@ function makeFlocks(){
         col: d.col, flapPh: rr(0,6.28)
       });
     }
+  }
+  // カメラの少し先を一緒に飛ぶ群れ（いつも視界に入る用）
+  for(let i=0;i<5;i++){
+    flocks.push({
+      escort: true, ahead: 0.3 + i*0.03, r: 52 + (i%2)*5 - 2,
+      yOff: 2.2 + (i%3)*1.3, s: 2.6,
+      col: i%2 ? [0.96,0.97,1.0] : [0.13,0.15,0.24], flapPh: rr(0,6.28)
+    });
   }
 }
 /* ---- 光の粒 ---- */
@@ -660,10 +678,18 @@ function frame(now){
   // 鳥
   gl.useProgram(birdProg); setStd(birdProg, proj, view, t);
   for(const f of flocks){
-    const fa = t * f.sp + f.ph;
-    const fx = Math.cos(fa)*f.r, fz = Math.sin(fa)*f.r;
-    const fy = f.y + Math.sin(t*0.9 + f.flapPh)*0.5;
-    const head = Math.atan2(Math.cos(fa) * Math.sign(f.sp), -Math.sin(fa) * Math.sign(f.sp));
+    let fx, fy, fz, head;
+    if(f.escort){
+      const fa = a + f.ahead + Math.sin(t*0.4 + f.flapPh)*0.012;
+      fx = Math.cos(fa)*f.r; fz = Math.sin(fa)*f.r;
+      fy = py + f.yOff + Math.sin(t*0.8 + f.flapPh)*0.4;
+      head = Math.atan2(Math.cos(fa), -Math.sin(fa));
+    } else {
+      const fa = t * f.sp + f.ph;
+      fx = Math.cos(fa)*f.r; fz = Math.sin(fa)*f.r;
+      fy = f.y + Math.sin(t*0.9 + f.flapPh)*0.5;
+      head = Math.atan2(Math.cos(fa) * Math.sign(f.sp), -Math.sin(fa) * Math.sign(f.sp));
+    }
     if(birdProg.u.uModel) gl.uniformMatrix4fv(birdProg.u.uModel, false, mModel(fx, fy, fz, -head, f.s, 0, 0));
     if(birdProg.u.uPhase) gl.uniform1f(birdProg.u.uPhase, f.flapPh);
     if(birdProg.u.uCol) gl.uniform3f(birdProg.u.uCol, f.col[0], f.col[1], f.col[2]);
