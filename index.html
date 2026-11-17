@@ -3,40 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Abyssal Garden - Fren ver.</title>
+<title>Sky Garden - Fren ver.</title>
 <style>
-  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#04222e; }
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#7db3e8; }
   #gl { display:block; width:100%; height:100%; touch-action:none; }
   #ui {
-    position:fixed; left:14px; top:12px; color:#dff6ff; pointer-events:none;
+    position:fixed; left:14px; top:12px; color:#ffffff; pointer-events:none;
     font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
-    text-shadow:0 1px 6px rgba(0,20,30,.8);
+    text-shadow:0 1px 6px rgba(30,60,110,.65);
   }
   #ui .title { font-size:19px; font-weight:700; letter-spacing:.06em; }
-  #ui .sub { font-size:11.5px; opacity:.85; margin-top:3px; line-height:1.5; }
+  #ui .sub { font-size:11.5px; opacity:.92; margin-top:3px; line-height:1.5; }
   #soundBtn {
     position:fixed; right:14px; bottom:14px; width:46px; height:46px; border-radius:50%;
-    border:1px solid rgba(200,240,255,.45); background:rgba(4,40,56,.55); color:#dff6ff;
+    border:1px solid rgba(255,255,255,.55); background:rgba(50,90,150,.45); color:#ffffff;
     font-size:20px; cursor:pointer; backdrop-filter:blur(3px);
   }
   #msg {
     position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-    color:#dff6ff; font-family:sans-serif; font-size:15px; text-align:center; padding:20px;
+    color:#ffffff; font-family:sans-serif; font-size:15px; text-align:center; padding:20px;
   }
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div id="ui">
-  <div class="title">Abyssal Garden - Fren ver.</div>
-  <div class="sub">全部コードで生成した海底世界（素材ファイルなし・単一HTML・オフライン可）<br>ドラッグで見回せます。カメラは自動で泳ぎます。</div>
+  <div class="title">Sky Garden - Fren ver.</div>
+  <div class="sub">全部コードで生成した空の世界（素材ファイルなし・単一HTML・オフライン可）<br>ドラッグで見回せます。カメラは自動で飛びます。</div>
 </div>
 <button id="soundBtn" title="サウンド ON/OFF">🔇</button>
 <div id="msg"></div>
 <script>
 "use strict";
 /* ================= ユーティリティ ================= */
-let seed = 20261117;
+let seed = 20261118;
 function rnd(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
 function rr(a,b){ return a + rnd()*(b-a); }
 function hash2(x,y){ const s = Math.sin(x*127.1 + y*311.7) * 43758.5453; return s - Math.floor(s); }
@@ -47,9 +47,6 @@ function vnoise(x,y){
   return a + (b-a)*u + (c-a)*v + (a-b-c+d)*u*v;
 }
 function fbm(x,y){ let t=0, amp=0.5, f=1; for(let i=0;i<4;i++){ t += amp*vnoise(x*f, y*f); f *= 2.03; amp *= 0.5; } return t; }
-function terrainH(x,z){
-  return (fbm(x*0.012+10.3, z*0.012+3.7)-0.5)*22 + (fbm(x*0.055+1.2, z*0.055+8.4)-0.5)*3.0;
-}
 /* 行列（最小限） */
 function mPersp(fovy, asp, n, f){ const t = 1/Math.tan(fovy/2), d = 1/(n-f); return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)*d,-1, 0,0,2*f*n*d,0]); }
 function mLookAt(e, c, up){
@@ -60,7 +57,6 @@ function mLookAt(e, c, up){
 }
 function mModel(px,py,pz, ry, s, rx, rz){
   const cy = Math.cos(ry), sy = Math.sin(ry), cx = Math.cos(rx||0), sx = Math.sin(rx||0), cz = Math.cos(rz||0), sz = Math.sin(rz||0);
-  // R = Ry * Rx * Rz（簡易合成）
   const a00=cy*cz+sy*sx*sz, a01=-cy*sz+sy*sx*cz, a02=sy*cx;
   const a10=cx*sz,          a11=cx*cz,           a12=-sx;
   const a20=-sy*cz+cy*sx*sz,a21=sy*sz+cy*sx*cz,  a22=cy*cx;
@@ -75,7 +71,7 @@ if(!gl){
   m.textContent = "このブラウザでは WebGL が使えないため表示できません。";
   throw new Error("no webgl");
 }
-const FOG = [0.035, 0.19, 0.26];
+const HAZE = [0.8, 0.88, 0.97];
 function sh(type, src){
   const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
   if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ console.warn(gl.getShaderInfoLog(s)); }
@@ -95,209 +91,13 @@ function prog(vs, fs){
   for(let i=0;i<na;i++){ const info = gl.getActiveAttrib(p, i); p.a[info.name] = gl.getAttribLocation(p, info.name); }
   return p;
 }
-function buf(data, itemSize, stride, offset, attrLoc){
-  const b = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, b);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-  return { b:b, itemSize:itemSize, stride:stride||0, offset:offset||0 };
-}
-const FOG_GLSL = [
+const HAZE_GLSL = [
   "uniform vec3 uFogColor; uniform float uFogDensity;",
-  "vec3 applyFog(vec3 col, float depth, float wy){",
+  "vec3 applyFog(vec3 col, float depth){",
   "  float f = 1.0 - exp(-uFogDensity * depth);",
-  "  vec3 fc = uFogColor * (0.75 + 0.45 * clamp((wy + 6.0) / 30.0, 0.0, 1.0));",
-  "  return mix(col, fc, clamp(f, 0.0, 1.0));",
+  "  return mix(col, uFogColor, clamp(f, 0.0, 1.0));",
   "}"
 ].join("\n");
-const CAUST_GLSL = [
-  "float caust(vec2 p, float t){",
-  "  float v = 0.0;",
-  "  v += sin(p.x*0.85 + t*0.8) + sin(p.y*1.05 - t*0.62);",
-  "  v += sin((p.x+p.y)*0.62 - t*0.45);",
-  "  v += sin(length(p*0.35) * 2.4 - t*0.9);",
-  "  v = v*0.125 + 0.5;",
-  "  return pow(clamp(v,0.0,1.0), 3.0);",
-  "}"
-].join("\n");
-
-/* ================= シェーダ ================= */
-const terrainProg = prog([
-  "attribute vec3 aPos; attribute vec3 aNorm; attribute vec3 aCol;",
-  "uniform mat4 uProj, uView;",
-  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth; varying vec3 vWorld;",
-  "void main(){",
-  "  vCol = aCol; vNorm = aNorm; vWorld = aPos;",
-  "  vec4 mv = uView * vec4(aPos, 1.0);",
-  "  vDepth = -mv.z;",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth; varying vec3 vWorld;",
-  "uniform float uTime;",
-  FOG_GLSL, CAUST_GLSL,
-  "void main(){",
-  "  vec3 L = normalize(vec3(0.3, 0.85, 0.25));",
-  "  float dif = 0.38 + 0.62 * max(dot(normalize(vNorm), L), 0.0);",
-  "  vec3 col = vCol * dif;",
-  "  float c = caust(vWorld.xz * 0.55, uTime) * clamp((vNorm.y), 0.0, 1.0);",
-  "  col += vec3(0.55, 0.75, 0.7) * c * 0.5;",
-  "  col = applyFog(col, vDepth, vWorld.y);",
-  "  gl_FragColor = vec4(col, 1.0);",
-  "}"
-].join("\n"));
-
-const kelpProg = prog([
-  "attribute vec3 aPos; attribute float aH; attribute float aPhase; attribute float aTint;",
-  "uniform mat4 uProj, uView; uniform float uTime;",
-  "varying float vH; varying float vTint; varying float vDepth; varying vec3 vWorld;",
-  "void main(){",
-  "  vec3 p = aPos;",
-  "  float sw = sin(uTime*1.25 + aPhase + p.y*0.32) * 0.38 + sin(uTime*2.6 + aPhase*1.7) * 0.09;",
-  "  float b = aH * aH;",
-  "  p.x += sw * b; p.z += sw * b * 0.6;",
-  "  vH = aH; vTint = aTint; vWorld = p;",
-  "  vec4 mv = uView * vec4(p, 1.0);",
-  "  vDepth = -mv.z;",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying float vH; varying float vTint; varying float vDepth; varying vec3 vWorld;",
-  FOG_GLSL,
-  "void main(){",
-  "  vec3 base = mix(vec3(0.03,0.22,0.08), vec3(0.1,0.38,0.12), vTint);",
-  "  vec3 tip  = mix(vec3(0.25,0.6,0.2), vec3(0.45,0.72,0.25), vTint);",
-  "  vec3 col = mix(base, tip, vH) * (0.55 + 0.45 * vH);",
-  "  col = applyFog(col, vDepth, vWorld.y);",
-  "  gl_FragColor = vec4(col, 1.0);",
-  "}"
-].join("\n"));
-
-const simpleProg = prog([
-  "attribute vec3 aPos; attribute vec3 aNorm; attribute vec3 aCol; attribute float aFlap;",
-  "uniform mat4 uProj, uView, uModel; uniform float uTime;",
-  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth; varying vec3 vWorld;",
-  "void main(){",
-  "  vec3 p = aPos;",
-  "  p.y += (sin(uTime*2.1) * 0.85 - 0.3) * aFlap;",
-  "  vec4 wp = uModel * vec4(p, 1.0);",
-  "  vWorld = wp.xyz; vCol = aCol;",
-  "  vNorm = mat3(uModel[0].xyz, uModel[1].xyz, uModel[2].xyz) * aNorm;",
-  "  vec4 mv = uView * wp;",
-  "  vDepth = -mv.z;",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth; varying vec3 vWorld;",
-  FOG_GLSL,
-  "void main(){",
-  "  vec3 L = normalize(vec3(0.3, 0.85, 0.25));",
-  "  float dif = 0.4 + 0.6 * max(dot(normalize(vNorm), L), 0.0);",
-  "  vec3 col = applyFog(vCol * dif, vDepth, vWorld.y);",
-  "  gl_FragColor = vec4(col, 1.0);",
-  "}"
-].join("\n"));
-
-const fishProg = prog([
-  "attribute vec3 aPos; attribute float aBend;",
-  "uniform mat4 uProj, uView, uModel; uniform float uTime; uniform float uPhase; uniform vec3 uCol;",
-  "varying float vDepth; varying vec3 vWorld; varying float vShade;",
-  "void main(){",
-  "  vec3 p = aPos;",
-  "  p.z += sin(uTime*7.0 + uPhase + aBend*2.2) * 0.14 * aBend;",
-  "  vShade = 0.75 + 0.25 * aBend;",
-  "  vec4 wp = uModel * vec4(p, 1.0);",
-  "  vWorld = wp.xyz;",
-  "  vec4 mv = uView * wp;",
-  "  vDepth = -mv.z;",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying float vDepth; varying vec3 vWorld; varying float vShade;",
-  "uniform vec3 uCol;",
-  FOG_GLSL,
-  "void main(){",
-  "  vec3 col = applyFog(uCol * vShade, vDepth, vWorld.y);",
-  "  gl_FragColor = vec4(col, 1.0);",
-  "}"
-].join("\n"));
-
-const pointProg = prog([
-  "attribute vec3 aPos; attribute float aRnd;",
-  "uniform mat4 uProj, uView; uniform float uTime; uniform float uRise; uniform float uSize;",
-  "varying float vA; varying float vDepth;",
-  "void main(){",
-  "  vec3 p = aPos;",
-  "  p.y = mod(p.y + uTime * uRise * (0.6 + aRnd*0.8) + 60.0, 34.0) - 14.0;",
-  "  p.x += sin(uTime*0.6 + aRnd*40.0 + p.y*0.4) * 0.6;",
-  "  vec4 mv = uView * vec4(p, 1.0);",
-  "  vDepth = -mv.z;",
-  "  vA = smoothstep(90.0, 25.0, vDepth);",
-  "  gl_PointSize = uSize * (0.7 + aRnd*0.6) * (60.0 / max(vDepth, 1.0));",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying float vA; varying float vDepth;",
-  "uniform vec3 uCol; uniform float uAlpha;",
-  "void main(){",
-  "  vec2 d = gl_PointCoord - 0.5;",
-  "  float a = smoothstep(0.5, 0.12, length(d)) * uAlpha * vA;",
-  "  if(a < 0.01) discard;",
-  "  gl_FragColor = vec4(uCol, a);",
-  "}"
-].join("\n"));
-
-const rayProg = prog([
-  "attribute vec3 aPos; attribute vec2 aUv; attribute float aPhase;",
-  "uniform mat4 uProj, uView;",
-  "varying vec2 vUv; varying float vPhase; varying float vDepth;",
-  "void main(){",
-  "  vUv = aUv; vPhase = aPhase;",
-  "  vec4 mv = uView * vec4(aPos, 1.0);",
-  "  vDepth = -mv.z;",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying vec2 vUv; varying float vPhase; varying float vDepth;",
-  "uniform float uTime;",
-  "void main(){",
-  "  float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(1.0, 0.65, vUv.x);",
-  "  float vert = pow(vUv.y, 1.6);",
-  "  float flick = 0.6 + 0.4 * sin(uTime*0.35 + vPhase*9.0);",
-  "  float a = edge * vert * flick * 0.16 * smoothstep(120.0, 40.0, vDepth);",
-  "  gl_FragColor = vec4(vec3(0.65, 0.9, 0.95), a);",
-  "}"
-].join("\n"));
-
-const surfProg = prog([
-  "attribute vec3 aPos;",
-  "uniform mat4 uProj, uView;",
-  "varying vec3 vWorld; varying float vDepth;",
-  "void main(){",
-  "  vWorld = aPos;",
-  "  vec4 mv = uView * vec4(aPos, 1.0);",
-  "  vDepth = -mv.z;",
-  "  gl_Position = uProj * mv;",
-  "}"
-].join("\n"), [
-  "precision mediump float;",
-  "varying vec3 vWorld; varying float vDepth;",
-  "uniform float uTime;",
-  FOG_GLSL, CAUST_GLSL,
-  "void main(){",
-  "  float c = caust(vWorld.xz * 0.16, uTime*0.7);",
-  "  vec3 col = mix(vec3(0.1, 0.42, 0.5), vec3(0.75, 0.95, 0.95), c);",
-  "  col = applyFog(col, vDepth * 0.4, vWorld.y);",
-  "  gl_FragColor = vec4(col, 1.0);",
-  "}"
-].join("\n"));
-
-/* ================= 描画オブジェクト ================= */
 function makeObj(p, attribs, mode, index){
   const o = { prog:p, mode:(mode===undefined?gl.TRIANGLES:mode), count:0, bufs:[], index:null };
   for(const name in attribs){
@@ -335,211 +135,426 @@ function drawObj(o){
 }
 const IDENT = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
 
-/* ---- 海底 ---- */
-function buildTerrain(){
-  const SEG = 110, SIZE = 420, pos = [], norm = [], col = [], idx = [];
-  for(let j=0;j<=SEG;j++){
-    for(let i=0;i<=SEG;i++){
-      const x = -SIZE/2 + SIZE*i/SEG, z = -SIZE/2 + SIZE*j/SEG;
-      const h = terrainH(x,z);
-      pos.push(x, h, z);
-      const e = 2.2;
-      const hx = terrainH(x+e,z) - terrainH(x-e,z);
-      const hz = terrainH(x,z+e) - terrainH(x,z-e);
-      let nx = -hx/(2*e), nz = -hz/(2*e), ny = 1;
-      const l = Math.hypot(nx,ny,nz); nx/=l; ny/=l; nz/=l;
-      norm.push(nx, ny, nz);
-      const slope = 1 - ny;
-      const patch = fbm(x*0.03+40, z*0.03+9);
-      let r = 0.6, g = 0.55, b = 0.38;                       // 砂
-      const rockMix = Math.min(1, slope*3.2 + Math.max(0, h-4)*0.05);
-      r = r*(1-rockMix) + 0.22*rockMix; g = g*(1-rockMix) + 0.24*rockMix; b = b*(1-rockMix) + 0.27*rockMix;
-      if(patch > 0.58){ const m = (patch-0.58)*1.6; r = r*(1-m)+0.16*m; g = g*(1-m)+0.33*m; b = b*(1-m)+0.15*m; } // 藻
-      const dk = 0.75 + 0.25*Math.min(1, Math.max(0,(h+13)/26));
-      col.push(r*dk, g*dk, b*dk);
-    }
-  }
-  for(let j=0;j<SEG;j++){
-    for(let i=0;i<SEG;i++){
-      const a = j*(SEG+1)+i, b2 = a+1, c = a+SEG+1, d = c+1;
-      idx.push(a, c, b2, b2, c, d);
-    }
-  }
-  return makeObj(terrainProg, { aPos:pos, aNorm:norm, aCol:col }, gl.TRIANGLES, idx);
-}
+/* ================= シェーダ ================= */
+const skyProg = prog([
+  "attribute vec3 aPos;",
+  "uniform mat4 uProj, uView;",
+  "varying vec3 vDir;",
+  "void main(){",
+  "  vDir = aPos;",
+  "  vec4 mv = uView * vec4(aPos, 1.0);",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying vec3 vDir;",
+  "void main(){",
+  "  vec3 d = normalize(vDir);",
+  "  float h = clamp(d.y, -1.0, 1.0);",
+  "  vec3 zen = vec3(0.22, 0.47, 0.85);",
+  "  vec3 mid = vec3(0.5, 0.72, 0.95);",
+  "  vec3 hor = vec3(0.88, 0.94, 1.0);",
+  "  vec3 col = mix(hor, mid, smoothstep(0.0, 0.25, h));",
+  "  col = mix(col, zen, smoothstep(0.2, 0.75, h));",
+  "  col = mix(vec3(0.75, 0.84, 0.94), col, smoothstep(-0.25, 0.02, h));",
+  "  vec3 sunDir = normalize(vec3(0.45, 0.38, 0.3));",
+  "  float s = max(dot(d, sunDir), 0.0);",
+  "  col += vec3(1.0, 0.85, 0.55) * pow(s, 220.0) * 1.4;",
+  "  col += vec3(1.0, 0.8, 0.5) * pow(s, 10.0) * 0.16;",
+  "  gl_FragColor = vec4(col, 1.0);",
+  "}"
+].join("\n"));
 
-/* ---- 海藻 ---- */
-function buildKelp(){
-  const pos = [], aH = [], aPh = [], aTi = [];
-  function blade(x, z, h, w){
-    const base = terrainH(x,z) - 0.3;
-    const rot = rnd()*Math.PI*2, cx = Math.cos(rot), sz = Math.sin(rot);
-    const phase = rnd()*Math.PI*2, tint = rnd();
-    const SEG = 4;
-    let prevL = null, prevR = null;
-    for(let i=0;i<=SEG;i++){
-      const t = i/SEG, y = base + h*t, hw = w*(1-t*0.72);
-      const lx = x + (-hw)*cx, lz = z + (-hw)*sz;
-      const rx2 = x + hw*cx, rz2 = z + hw*sz;
-      if(prevL){
-        pos.push(prevL[0],prevL[1],prevL[2], prevR[0],prevR[1],prevR[2], lx,y,lz);
-        pos.push(prevR[0],prevR[1],prevR[2], rx2,y,rz2, lx,y,lz);
-        const pt = (i-1)/SEG;
-        aH.push(pt,pt,t, pt,t,t); aPh.push(phase,phase,phase, phase,phase,phase); aTi.push(tint,tint,tint, tint,tint,tint);
-      }
-      prevL = [lx,y,lz]; prevR = [rx2,y,rz2];
-    }
-  }
-  for(let k=0;k<520;k++){
-    const a = rnd()*Math.PI*2, rad = 14 + Math.pow(rnd(),0.7)*180;
-    blade(Math.cos(a)*rad, Math.sin(a)*rad, rr(4.5,9.5), rr(0.4,0.6));
-  }
-  for(let k=0;k<800;k++){
-    const a = rnd()*Math.PI*2, rad = 8 + Math.pow(rnd(),0.8)*185;
-    blade(Math.cos(a)*rad, Math.sin(a)*rad, rr(1.1,2.6), rr(0.13,0.2));
-  }
-  return makeObj(kelpProg, { aPos:pos, aH:aH, aPhase:aPh, aTint:aTi });
-}
+const seaProg = prog([
+  "attribute vec3 aPos;",
+  "uniform mat4 uProj, uView;",
+  "varying vec3 vWorld; varying float vDepth;",
+  "void main(){",
+  "  vWorld = aPos;",
+  "  vec4 mv = uView * vec4(aPos, 1.0);",
+  "  vDepth = -mv.z;",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying vec3 vWorld; varying float vDepth;",
+  "uniform float uTime;",
+  HAZE_GLSL,
+  "float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }",
+  "float vnoise(vec2 p){",
+  "  vec2 i = floor(p), f = fract(p);",
+  "  vec2 u = f*f*(3.0-2.0*f);",
+  "  return mix(mix(hash21(i), hash21(i+vec2(1,0)), u.x), mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), u.x), u.y);",
+  "}",
+  "float fbm(vec2 p){ float t=0.0, a=0.5; for(int i=0;i<4;i++){ t += a*vnoise(p); p *= 2.03; a *= 0.5; } return t; }",
+  "void main(){",
+  "  vec2 p = vWorld.xz * 0.016 + vec2(uTime*0.006, uTime*0.002);",
+  "  float n = fbm(p);",
+  "  float n2 = fbm(p * 3.1 + 7.0);",
+  "  vec3 shad = vec3(0.6, 0.71, 0.88);",
+  "  vec3 lite = vec3(1.03, 1.04, 1.05);",
+  "  vec3 col = mix(shad, lite, smoothstep(0.32, 0.78, n * 0.75 + n2 * 0.35));",
+  "  col = applyFog(col, vDepth);",
+  "  gl_FragColor = vec4(col, 1.0);",
+  "}"
+].join("\n"));
 
-/* ---- 岩とサンゴ（ico形状の合体ジオメトリ） ---- */
+const isleProg = prog([
+  "attribute vec3 aPos; attribute vec3 aNorm; attribute vec3 aCol; attribute float aPhase;",
+  "uniform mat4 uProj, uView; uniform float uTime;",
+  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth;",
+  "void main(){",
+  "  vec3 p = aPos;",
+  "  p.y += sin(uTime*0.45 + aPhase) * 0.55;",
+  "  vCol = aCol; vNorm = aNorm;",
+  "  vec4 mv = uView * vec4(p, 1.0);",
+  "  vDepth = -mv.z;",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth;",
+  HAZE_GLSL,
+  "void main(){",
+  "  vec3 L = normalize(vec3(0.45, 0.62, 0.3));",
+  "  float dif = 0.42 + 0.58 * max(dot(normalize(vNorm), L), 0.0);",
+  "  vec3 col = applyFog(vCol * dif, vDepth);",
+  "  gl_FragColor = vec4(col, 1.0);",
+  "}"
+].join("\n"));
+
+const cloudProg = prog([
+  "attribute vec3 aPos; attribute vec3 aNorm; attribute vec3 aCol; attribute float aPhase;",
+  "uniform mat4 uProj, uView; uniform float uTime;",
+  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth;",
+  "void main(){",
+  "  vec3 p = aPos;",
+  "  p.x += sin(uTime*0.06 + aPhase) * 3.0;",
+  "  p.z += cos(uTime*0.045 + aPhase*1.3) * 2.0;",
+  "  vCol = aCol; vNorm = aNorm;",
+  "  vec4 mv = uView * vec4(p, 1.0);",
+  "  vDepth = -mv.z;",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying vec3 vCol; varying vec3 vNorm; varying float vDepth;",
+  HAZE_GLSL,
+  "void main(){",
+  "  vec3 L = normalize(vec3(0.45, 0.62, 0.3));",
+  "  float dif = 0.62 + 0.38 * max(dot(normalize(vNorm), L), 0.0);",
+  "  vec3 col = applyFog(vCol * dif, vDepth);",
+  "  gl_FragColor = vec4(col, 1.0);",
+  "}"
+].join("\n"));
+
+const fallProg = prog([
+  "attribute vec3 aPos; attribute vec2 aUv; attribute float aPhase;",
+  "uniform mat4 uProj, uView; uniform float uTime;",
+  "varying vec2 vUv; varying float vDepth;",
+  "void main(){",
+  "  vec3 p = aPos;",
+  "  p.y += sin(uTime*0.45 + aPhase) * 0.55;",
+  "  vUv = aUv;",
+  "  vec4 mv = uView * vec4(p, 1.0);",
+  "  vDepth = -mv.z;",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying vec2 vUv; varying float vDepth;",
+  "uniform float uTime;",
+  "void main(){",
+  "  float streak = 0.55 + 0.45 * sin(vUv.y*46.0 + uTime*3.4 + sin(vUv.x*22.0)*0.8);",
+  "  float edge = smoothstep(0.0, 0.3, vUv.x) * smoothstep(1.0, 0.7, vUv.x);",
+  "  float vert = mix(0.1, 1.0, vUv.y);",
+  "  float a = streak * edge * vert * 0.5;",
+  "  gl_FragColor = vec4(vec3(0.88, 0.96, 1.0), a);",
+  "}"
+].join("\n"));
+
+const birdProg = prog([
+  "attribute vec3 aPos; attribute float aWing;",
+  "uniform mat4 uProj, uView, uModel; uniform float uTime; uniform float uPhase; uniform vec3 uCol;",
+  "varying float vDepth; varying float vShade;",
+  "void main(){",
+  "  vec3 p = aPos;",
+  "  p.y += sin(uTime*9.0 + uPhase) * aWing * 0.6 - aWing * 0.12;",
+  "  vShade = 0.8 + 0.2 * sin(uTime*9.0 + uPhase) * aWing;",
+  "  vec4 wp = uModel * vec4(p, 1.0);",
+  "  vec4 mv = uView * wp;",
+  "  vDepth = -mv.z;",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying float vDepth; varying float vShade;",
+  "uniform vec3 uCol;",
+  HAZE_GLSL,
+  "void main(){",
+  "  vec3 col = applyFog(uCol * vShade, vDepth);",
+  "  gl_FragColor = vec4(col, 1.0);",
+  "}"
+].join("\n"));
+
+const pointProg = prog([
+  "attribute vec3 aPos; attribute float aRnd;",
+  "uniform mat4 uProj, uView; uniform float uTime; uniform float uRise; uniform float uSize;",
+  "varying float vA; varying float vDepth;",
+  "void main(){",
+  "  vec3 p = aPos;",
+  "  p.y = mod(p.y + uTime * uRise * (0.6 + aRnd*0.8) + 80.0, 55.0) - 28.0;",
+  "  p.x += sin(uTime*0.4 + aRnd*40.0 + p.y*0.3) * 1.2;",
+  "  vec4 mv = uView * vec4(p, 1.0);",
+  "  vDepth = -mv.z;",
+  "  vA = smoothstep(160.0, 50.0, vDepth);",
+  "  gl_PointSize = uSize * (0.7 + aRnd*0.6) * (60.0 / max(vDepth, 1.0));",
+  "  gl_Position = uProj * mv;",
+  "}"
+].join("\n"), [
+  "precision mediump float;",
+  "varying float vA; varying float vDepth;",
+  "uniform vec3 uCol; uniform float uAlpha;",
+  "void main(){",
+  "  vec2 d = gl_PointCoord - 0.5;",
+  "  float a = smoothstep(0.5, 0.1, length(d)) * uAlpha * vA;",
+  "  if(a < 0.01) discard;",
+  "  gl_FragColor = vec4(uCol, a);",
+  "}"
+].join("\n"));
+
+/* ================= ジオメトリ ================= */
 const ICO_V = (function(){
   const t = (1+Math.sqrt(5))/2;
   const raw = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]];
   return raw.map(function(v){ const l = Math.hypot(v[0],v[1],v[2]); return [v[0]/l, v[1]/l, v[2]/l]; });
 })();
 const ICO_F = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
-function buildRocksCorals(){
-  const pos = [], norm = [], col = [], flap = [];
-  function blob(x, z, s, sy, cr, cg, cb, sink){
-    const y = terrainH(x,z) + s*sy*0.4 - (sink||0);
-    const rot = rnd()*Math.PI*2, cy = Math.cos(rot), sy2 = Math.sin(rot);
-    const jit = ICO_V.map(function(_, i){ return 0.78 + hash2(i*3.7, s*13.1)*0.5; });
-    for(const f of ICO_F){
-      const pts = f.map(function(vi){
-        const v = ICO_V[vi], j = jit[vi];
-        let px = v[0]*j*s, py = v[1]*j*s*sy, pz = v[2]*j*s;
-        const wx = px*cy + pz*sy2, wz = -px*sy2 + pz*cy;
-        return [x+wx, y+py, z+wz];
-      });
-      const ux = pts[1][0]-pts[0][0], uy = pts[1][1]-pts[0][1], uz = pts[1][2]-pts[0][2];
-      const vx = pts[2][0]-pts[0][0], vy = pts[2][1]-pts[0][1], vz = pts[2][2]-pts[0][2];
-      let nx = uy*vz-uz*vy, ny = uz*vx-ux*vz, nz = ux*vy-uy*vx;
-      const l = Math.hypot(nx,ny,nz)||1; nx/=l; ny/=l; nz/=l;
-      const sh = 0.9 + rnd()*0.2;
-      for(const p of pts){ pos.push(p[0],p[1],p[2]); norm.push(nx,ny,nz); col.push(cr*sh, cg*sh, cb*sh); flap.push(0); }
+/* ICOブロブを配列に積む。colFn(ny) が色を返す（nyは-1..1の正規化した高さ） */
+function pushBlob(A, cx, cy, cz, sx, sy, sz, rot, seedJ, phase, colFn, downStretch){
+  const cyR = Math.cos(rot), syR = Math.sin(rot);
+  const jit = ICO_V.map(function(_, i){ return 0.85 + hash2(i*3.7 + seedJ*17.0, seedJ*29.0)*0.3; });
+  for(const f of ICO_F){
+    const pts = f.map(function(vi){
+      const v = ICO_V[vi], j = jit[vi];
+      let px = v[0]*j*sx, py = v[1]*j*sy, pz = v[2]*j*sz;
+      if(downStretch && v[1] < 0) py *= downStretch;
+      const wx = px*cyR + pz*syR, wz = -px*syR + pz*cyR;
+      return [cx+wx, cy+py, cz+wz, v[1]];
+    });
+    const ux = pts[1][0]-pts[0][0], uy = pts[1][1]-pts[0][1], uz = pts[1][2]-pts[0][2];
+    const vx = pts[2][0]-pts[0][0], vy = pts[2][1]-pts[0][1], vz = pts[2][2]-pts[0][2];
+    let nx = uy*vz-uz*vy, ny = uz*vx-ux*vz, nz = ux*vy-uy*vx;
+    const l = Math.hypot(nx,ny,nz)||1; nx/=l; ny/=l; nz/=l;
+    for(const p of pts){
+      A.pos.push(p[0],p[1],p[2]); A.norm.push(nx,ny,nz);
+      const c = colFn(p[3]);
+      A.col.push(c[0],c[1],c[2]); A.phase.push(phase);
     }
   }
-  for(let k=0;k<130;k++){
-    const a = rnd()*Math.PI*2, rad = 16 + Math.pow(rnd(),0.8)*180;
-    const g = rr(0.16,0.3);
-    blob(Math.cos(a)*rad, Math.sin(a)*rad, rr(0.8,3.4), rr(0.55,0.9), g, g*1.05, g*1.15, 0.25);
-  }
-  const coralCols = [[0.85,0.4,0.45],[0.9,0.55,0.25],[0.6,0.35,0.7],[0.85,0.7,0.3],[0.9,0.45,0.6]];
-  for(let k=0;k<46;k++){
-    const a = rnd()*Math.PI*2, rad = 18 + Math.pow(rnd(),0.9)*160;
-    const cx0 = Math.cos(a)*rad, cz0 = Math.sin(a)*rad;
-    const c = coralCols[k % coralCols.length];
-    const n = 3 + Math.floor(rnd()*3);
-    for(let m=0;m<n;m++){
-      blob(cx0 + rr(-1.6,1.6), cz0 + rr(-1.6,1.6), rr(0.3,0.85), rr(0.8,1.7), c[0], c[1], c[2], 0.05);
-    }
-  }
-  return makeObj(simpleProg, { aPos:pos, aNorm:norm, aCol:col, aFlap:flap });
+}
+function newAcc(){ return { pos:[], norm:[], col:[], phase:[] }; }
+function accObj(p, A, extra){
+  const attribs = { aPos:A.pos, aNorm:A.norm, aCol:A.col, aPhase:A.phase };
+  if(extra) for(const k in extra) attribs[k] = extra[k];
+  return makeObj(p, attribs);
 }
 
-/* ---- 魚 ---- */
-function buildFish(){
-  // +X が頭。aBend は尾ほど大きい
-  const P = [
-    [0.55,0,0,0],[0.05,0.17,0,0.35],[0.05,-0.17,0,0.35],[-0.3,0,0,0.7],
-    [-0.58,0.2,0,1],[-0.58,-0.2,0,1],[-0.44,0,0,0.9]
-  ];
-  const F = [[0,1,3],[0,3,2],[3,4,6],[3,6,5]];
-  const pos = [], bend = [];
-  for(const f of F){ for(const vi of f){ pos.push(P[vi][0], P[vi][1], P[vi][2]); bend.push(P[vi][3]); } }
-  return makeObj(fishProg, { aPos:pos, aBend:bend });
+/* ---- 空ドーム ---- */
+function buildSky(){
+  const pos = [], idx = [], NLAT = 14, NLON = 22;
+  for(let j=0;j<=NLAT;j++){
+    const th = j/NLAT * Math.PI;
+    for(let i=0;i<=NLON;i++){
+      const ph = i/NLON * Math.PI * 2;
+      pos.push(Math.sin(th)*Math.cos(ph)*430, Math.cos(th)*430, Math.sin(th)*Math.sin(ph)*430);
+    }
+  }
+  for(let j=0;j<NLAT;j++) for(let i=0;i<NLON;i++){
+    const a = j*(NLON+1)+i, b = a+1, c = a+NLON+1, d = c+1;
+    idx.push(a, b, c, b, d, c);
+  }
+  return makeObj(skyProg, { aPos:pos }, gl.TRIANGLES, idx);
 }
-const schools = [];
-function makeSchools(){
+/* ---- 下の雲海 ---- */
+function buildSea(){
+  const S = 860;
+  const pos = [-S,-42,-S,  S,-42,-S,  -S,-42,S,  S,-42,S];
+  const idx = [0,2,1, 1,2,3];
+  return makeObj(seaProg, { aPos:pos }, gl.TRIANGLES, idx);
+}
+/* ---- 浮島 ---- */
+const islands = [];
+function buildIslands(){
+  const A = newAcc();
+  const falls = [];
+  function island(x, z, y, R){
+    const phase = rnd()*Math.PI*2;
+    const topY = y + R*0.5;
+    islands.push({ x:x, z:z, y:y, R:R, phase:phase, topY:topY });
+    // 岩の下ぶくれ
+    pushBlob(A, x, y, z, R, R, R, rnd()*Math.PI*2, rnd()*100, phase, function(ny){
+      const t = ny*0.5+0.5;
+      return [0.32+0.2*t, 0.27+0.16*t, 0.22+0.12*t];
+    }, 1.9);
+    // 草の天面（ドーム状の扇）
+    const SEG = 14, gr = R*1.03;
+    const cx0 = x, cz0 = z;
+    const ringPts = [];
+    for(let i=0;i<=SEG;i++){
+      const a = i/SEG*Math.PI*2;
+      ringPts.push([cx0 + Math.cos(a)*gr, topY - 0.35, cz0 + Math.sin(a)*gr]);
+    }
+    for(let i=0;i<SEG;i++){
+      const p1 = ringPts[i], p2 = ringPts[i+1];
+      const g1 = 0.3 + hash2(i*1.3, R)*0.14;
+      A.pos.push(cx0, topY+0.3, cz0,  p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2]);
+      for(let k=0;k<3;k++){ A.norm.push(0,1,0); A.col.push(0.24, g1+0.28, 0.16); A.phase.push(phase); }
+    }
+    // 木
+    if(R >= 4.6){
+      const nt = R >= 7 ? 3 : (rnd() < 0.7 ? 2 : 1);
+      for(let k=0;k<nt;k++){
+        const ta = rnd()*Math.PI*2, tr = rr(0, R*0.55);
+        const tx = x + Math.cos(ta)*tr, tz = z + Math.sin(ta)*tr;
+        const th = rr(1.5, 2.6), ty = topY + 0.1;
+        const SEG2 = 6;
+        for(let s2=0;s2<SEG2;s2++){
+          const a1 = s2/SEG2*Math.PI*2, a2 = (s2+1)/SEG2*Math.PI*2;
+          const r0 = 0.17;
+          const q = [
+            [tx+Math.cos(a1)*r0, ty, tz+Math.sin(a1)*r0],
+            [tx+Math.cos(a2)*r0, ty, tz+Math.sin(a2)*r0],
+            [tx+Math.cos(a1)*r0*0.7, ty+th, tz+Math.sin(a1)*r0*0.7],
+            [tx+Math.cos(a2)*r0*0.7, ty+th, tz+Math.sin(a2)*r0*0.7]
+          ];
+          const tris = [q[0],q[1],q[2], q[1],q[3],q[2]];
+          for(const p of tris){ A.pos.push(p[0],p[1],p[2]); A.norm.push(0,0.4,0); A.col.push(0.36,0.24,0.14); A.phase.push(phase); }
+        }
+        const gs = rr(1.0, 1.6);
+        pushBlob(A, tx, ty+th+gs*0.75, tz, gs, gs*0.88, gs, rnd()*3, rnd()*100, phase, function(ny){
+          const t = ny*0.5+0.5;
+          return [0.16+0.08*t, 0.42+0.18*t, 0.15+0.06*t];
+        }, 1.0);
+        if(rnd() < 0.6){
+          pushBlob(A, tx+gs*0.7, ty+th+gs*0.4, tz+gs*0.3, gs*0.55, gs*0.5, gs*0.55, rnd()*3, rnd()*100, phase, function(ny){
+            const t = ny*0.5+0.5;
+            return [0.18+0.08*t, 0.44+0.16*t, 0.16+0.06*t];
+          }, 1.0);
+        }
+      }
+    }
+    // 花
+    if(rnd() < 0.65){
+      const fc = [[0.95,0.55,0.65],[0.98,0.85,0.4],[0.95,0.95,0.98],[0.8,0.6,0.95]];
+      const nf = 5 + Math.floor(rnd()*5);
+      for(let k=0;k<nf;k++){
+        const fa = rnd()*Math.PI*2, fr = rr(0, R*0.8);
+        const c = fc[Math.floor(rnd()*fc.length)];
+        pushBlob(A, x+Math.cos(fa)*fr, topY+0.32, z+Math.sin(fa)*fr, 0.15, 0.13, 0.15, 0, rnd()*100, phase, function(){ return c; }, 1.0);
+      }
+    }
+    // 滝（大きめの島だけ）
+    if(R >= 6){
+      const fa = rnd()*Math.PI*2;
+      falls.push({
+        x: x + Math.cos(fa)*R*0.92, z: z + Math.sin(fa)*R*0.92,
+        y: topY - 0.4, ang: fa, phase: phase
+      });
+    }
+  }
+  for(let k=0;k<7;k++){ const a = rnd()*Math.PI*2, rad = rr(14,40); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-3,9), rr(4,8)); }
+  for(let k=0;k<8;k++){ const a = rnd()*Math.PI*2, rad = rr(78,135); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-6,12), rr(6,13)); }
+  for(let k=0;k<6;k++){ const a = rnd()*Math.PI*2, rad = rr(150,235); island(Math.cos(a)*rad, Math.sin(a)*rad, rr(-10,20), rr(3,6)); }
+  return { obj: accObj(isleProg, A), falls: falls };
+}
+/* ---- 雲 ---- */
+function buildClouds(){
+  const A = newAcc();
+  for(let k=0;k<26;k++){
+    const a = rnd()*Math.PI*2, rad = rr(40,260);
+    const cx = Math.cos(a)*rad, cz = Math.sin(a)*rad;
+    let cy;
+    if(rad > 40 && rad < 78) cy = rnd() < 0.5 ? rr(-22,-4) : rr(19,30);
+    else cy = rr(-22, 28);
+    const phase = rnd()*Math.PI*2;
+    const np = 3 + Math.floor(rnd()*4);
+    for(let m=0;m<np;m++){
+      const s = rr(2.6, 6.5);
+      pushBlob(A, cx + rr(-5,5), cy + rr(-1,1.4), cz + rr(-4,4), s, s*0.42, s*rr(0.7,1), rnd()*3, rnd()*100, phase, function(ny){
+        const t = ny*0.5+0.5;
+        return [0.74+0.26*t, 0.81+0.19*t, 0.93+0.07*t];
+      }, 1.0);
+    }
+  }
+  return accObj(cloudProg, A);
+}
+/* ---- 滝 ---- */
+function buildFalls(falls){
+  const pos = [], uv = [], ph = [];
+  for(const f of falls){
+    const tx = -Math.sin(f.ang), tz = Math.cos(f.ang);
+    const w = 1.25, H = 30;
+    const quad = [
+      [f.x - tx*w, f.y, f.z - tz*w, 0, 1],[f.x + tx*w, f.y, f.z + tz*w, 1, 1],
+      [f.x - tx*w*1.4, f.y - H, f.z - tz*w*1.4, 0, 0],[f.x + tx*w*1.4, f.y - H, f.z + tz*w*1.4, 1, 0]
+    ];
+    const order = [0,2,1, 1,2,3];
+    for(const oi of order){ const q = quad[oi]; pos.push(q[0],q[1],q[2]); uv.push(q[3],q[4]); ph.push(f.phase); }
+  }
+  return makeObj(fallProg, { aPos:pos, aUv:uv, aPhase:ph });
+}
+/* ---- 鳥 ---- */
+function buildBird(){
+  const P = [
+    [0.55,0,0,0],[0.02,0.11,0,0],[0.02,-0.11,0,0],[-0.32,0,0,0.03],
+    [-0.58,0,0.16,0.06],[-0.58,0,-0.16,0.06],[-0.46,0,0,0.05],
+    [0.18,0.03,0.1,0.06],[-0.22,0.03,0.14,0.08],[-0.02,0.03,1.7,1.0],
+    [0.18,0.03,-0.1,0.06],[-0.22,0.03,-0.14,0.08],[-0.02,0.03,-1.7,1.0]
+  ];
+  const F = [[0,1,3],[0,3,2],[3,4,6],[3,6,5],[7,8,9],[10,12,11]];
+  const pos = [], wing = [];
+  for(const f of F){ for(const vi of f){ pos.push(P[vi][0], P[vi][1], P[vi][2]); wing.push(P[vi][3]); } }
+  return makeObj(birdProg, { aPos:pos, aWing:wing });
+}
+const flocks = [];
+function makeFlocks(){
   const defs = [
-    { n:13, col:[0.75,0.82,0.9], c:[30,-40], r:20, sp:0.14 },
-    { n:11, col:[0.95,0.6,0.25], c:[-55,25], r:16, sp:0.18 },
-    { n:12, col:[0.55,0.75,0.95], c:[-15,-75], r:24, sp:0.11 }
+    { n:9,  col:[0.13,0.15,0.24], r:58, y:13.5, sp:0.055, s:2.3 },
+    { n:7,  col:[0.96,0.97,1.0],  r:47, y:8.0,  sp:-0.07, s:2.0 },
+    { n:11, col:[0.13,0.15,0.24], r:68, y:18.0, sp:0.045, s:1.9 }
   ];
   for(const d of defs){
-    const baseY = Math.max(terrainH(d.c[0], d.c[1]) + 8, 9);
     for(let i=0;i<d.n;i++){
-      schools.push({
-        cx:d.c[0], cz:d.c[1], y: baseY + rr(-1.5,1.5), r: d.r + rr(-3,3),
-        sp: d.sp * rr(0.9,1.1), ph: (i/d.n)*Math.PI*2 + rr(-0.2,0.2),
-        s: rr(0.8,1.4), col: d.col, bobPh: rr(0,6.28)
+      flocks.push({
+        r: d.r + rr(-4,4), y: d.y + rr(-1.6,1.6), sp: d.sp,
+        ph: i*0.055 + rr(-0.02,0.02), s: d.s * rr(0.9,1.1),
+        col: d.col, flapPh: rr(0,6.28)
       });
     }
   }
 }
-/* ---- マンタ ---- */
-function buildManta(){
-  const V = [
-    [0,0,0,0],[1.7,0,0,0],[0.2,0,-1.6,0.47],[-0.5,0,-3.4,1],[-1.2,0,-1.2,0.35],
-    [-1.5,0,0,0],[-1.2,0,1.2,0.35],[-0.5,0,3.4,1],[0.2,0,1.6,0.47]
-  ];
-  const F = [[0,1,8],[0,8,7],[0,7,6],[0,6,5],[0,5,4],[0,4,3],[0,3,2],[0,2,1]];
-  const pos = [], norm = [], col = [], flap = [];
-  for(const f of F){ for(const vi of f){ pos.push(V[vi][0], V[vi][1], V[vi][2]); norm.push(0,1,0); col.push(0.09,0.11,0.15); flap.push(V[vi][3]); } }
-  // 尾
-  pos.push(-1.5,0,0, -3.4,0,0.14, -3.4,0,-0.14); norm.push(0,1,0, 0,1,0, 0,1,0);
-  col.push(0.09,0.11,0.15, 0.09,0.11,0.15, 0.09,0.11,0.15); flap.push(0.1,0.25,0.25);
-  return makeObj(simpleProg, { aPos:pos, aNorm:norm, aCol:col, aFlap:flap });
-}
-/* ---- マリンスノーと泡 ---- */
-function buildPoints(count, cluster){
+/* ---- 光の粒 ---- */
+function buildSparkles(){
   const pos = [], rndA = [];
-  const emitters = [];
-  for(let i=0;i<6;i++){ const a = rnd()*Math.PI*2, rad = rr(20,90); emitters.push([Math.cos(a)*rad, Math.sin(a)*rad]); }
-  for(let i=0;i<count;i++){
-    let x, z;
-    if(cluster){ const e = emitters[i % emitters.length]; x = e[0] + rr(-3,3); z = e[1] + rr(-3,3); }
-    else { x = rr(-200,200); z = rr(-200,200); }
-    pos.push(x, rr(0,34), z); rndA.push(rnd());
+  for(let i=0;i<450;i++){
+    const a = rnd()*Math.PI*2, rad = Math.pow(rnd(),0.6)*170;
+    pos.push(Math.cos(a)*rad, rr(0,55), Math.sin(a)*rad);
+    rndA.push(rnd());
   }
   return makeObj(pointProg, { aPos:pos, aRnd:rndA }, gl.POINTS);
 }
-/* ---- 光の筋 ---- */
-function buildRays(){
-  const pos = [], uv = [], ph = [];
-  for(let k=0;k<7;k++){
-    const x = rr(-130,130), z = rr(-130,130), wt = rr(3,7), wb = wt*rr(1.8,2.6), phr = rnd();
-    const sx = rr(4,9), sz2 = rr(1,3);
-    const quad = [
-      [x-wt, 20, z, 0, 1],[x+wt, 20, z, 1, 1],
-      [x-wb+sx, -13, z+sz2, 0, 0],[x+wb+sx, -13, z+sz2, 1, 0]
-    ];
-    const order = [0,2,1, 1,2,3];
-    for(const oi of order){ const q = quad[oi]; pos.push(q[0],q[1],q[2]); uv.push(q[3],q[4]); ph.push(phr); }
-  }
-  return makeObj(rayProg, { aPos:pos, aUv:uv, aPhase:ph });
-}
-/* ---- 水面 ---- */
-function buildSurface(){
-  const pos = [], idx = [], N = 28;
-  pos.push(0, 20, 0);
-  for(let i=0;i<=N;i++){ const a = i/N*Math.PI*2; pos.push(Math.cos(a)*300, 20, Math.sin(a)*300); }
-  for(let i=1;i<=N;i++){ idx.push(0, i, i+1); }
-  return makeObj(surfProg, { aPos:pos }, gl.TRIANGLES, idx);
-}
 
 /* ================= シーン構築 ================= */
-const terrainObj = buildTerrain();
-const kelpObj = buildKelp();
-const rockObj = buildRocksCorals();
-const fishObj = buildFish();
-makeSchools();
-const mantaObj = buildManta();
-const snowObj = buildPoints(700, false);
-const bubbleObj = buildPoints(130, true);
-const rayObj = buildRays();
-const surfObj = buildSurface();
-const mantaPath = { cx:0, cz:-10, r:48, y:16.5, sp:0.05 };
+const skyObj = buildSky();
+const seaObj = buildSea();
+const isleBuilt = buildIslands();
+const isleObj = isleBuilt.obj;
+const fallObj = buildFalls(isleBuilt.falls);
+const cloudObj = buildClouds();
+const birdObj = buildBird();
+makeFlocks();
+const sparkObj = buildSparkles();
 
 /* ================= カメラと入力 ================= */
 let lookYaw = 0, lookPitch = 0, dragging = false, lastX = 0, lastY = 0, idleTime = 0;
@@ -564,23 +579,23 @@ function initAudio(){
   const d = b.getChannelData(0); let last = 0;
   for(let i=0;i<len;i++){ const w = Math.random()*2-1; last = (last + 0.02*w)/1.02; d[i] = last*3.2; }
   const src = audioCtx.createBufferSource(); src.buffer = b; src.loop = true;
-  const f = audioCtx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 320;
-  src.connect(f); f.connect(masterGain); src.start();
-  function bubble(){
+  const f = audioCtx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 480;
+  const g = audioCtx.createGain(); g.gain.value = 0.7;
+  src.connect(f); f.connect(g); g.connect(masterGain); src.start();
+  const notes = [523.25, 587.33, 659.25, 783.99, 880.0];
+  function chime(){
     if(!audioCtx) return;
     const t = audioCtx.currentTime;
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    const o = audioCtx.createOscillator(), og = audioCtx.createGain();
     o.type = "sine";
-    const fr = 300 + Math.random()*500;
-    o.frequency.setValueAtTime(fr, t);
-    o.frequency.exponentialRampToValueAtTime(fr*2.2, t + 0.12);
-    g.gain.setValueAtTime(0.0, t);
-    g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.04, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    o.connect(g); g.connect(masterGain); o.start(t); o.stop(t + 0.2);
-    setTimeout(bubble, 250 + Math.random()*1400);
+    o.frequency.value = notes[Math.floor(Math.random()*notes.length)] * (Math.random() < 0.3 ? 2 : 1);
+    og.gain.setValueAtTime(0.0, t);
+    og.gain.linearRampToValueAtTime(0.045, t + 0.03);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    o.connect(og); og.connect(masterGain); o.start(t); o.stop(t + 1.5);
+    setTimeout(chime, 2200 + Math.random()*3800);
   }
-  bubble();
+  chime();
 }
 document.getElementById("soundBtn").addEventListener("click", function(){
   if(!audioCtx) initAudio();
@@ -601,30 +616,26 @@ window.addEventListener("resize", resize);
 resize();
 gl.disable(gl.CULL_FACE);
 gl.enable(gl.DEPTH_TEST);
-gl.clearColor(FOG[0], FOG[1], FOG[2], 1);
+gl.clearColor(HAZE[0], HAZE[1], HAZE[2], 1);
 
 function setStd(p, proj, view, t){
   if(p.u.uProj) gl.uniformMatrix4fv(p.u.uProj, false, proj);
   if(p.u.uView) gl.uniformMatrix4fv(p.u.uView, false, view);
   if(p.u.uTime) gl.uniform1f(p.u.uTime, t);
-  if(p.u.uFogColor) gl.uniform3f(p.u.uFogColor, FOG[0], FOG[1], FOG[2]);
-  if(p.u.uFogDensity) gl.uniform1f(p.u.uFogDensity, 0.0135);
+  if(p.u.uFogColor) gl.uniform3f(p.u.uFogColor, HAZE[0], HAZE[1], HAZE[2]);
+  if(p.u.uFogDensity) gl.uniform1f(p.u.uFogDensity, 0.0052);
 }
-let camHist = [];
 function frame(now){
   requestAnimationFrame(frame);
   const t = now * 0.001;
-  const proj = mPersp(1.15, canvas.width/Math.max(canvas.height,1), 0.1, 500);
-  // カメラ：円軌道をゆっくり泳ぐ
+  const proj = mPersp(1.15, canvas.width/Math.max(canvas.height,1), 0.1, 900);
+  // カメラ：円軌道をゆっくり飛ぶ
   const a = t * 0.021;
-  const px = Math.cos(a)*62, pz = Math.sin(a)*62;
-  const pyRaw = terrainH(px, pz) + 6.5 + Math.sin(t*0.4)*0.7;
-  camHist.push(pyRaw); if(camHist.length > 50) camHist.shift();
-  const py = camHist.reduce(function(s,v){ return s+v; }, 0) / camHist.length;
-  const a2 = a + 0.12;
-  const lx = Math.cos(a2)*62, lz = Math.sin(a2)*62;
-  const ly = terrainH(lx, lz) + 6.2 + Math.sin(t*0.4 + 0.5)*0.7;
-  // ドラッグ見回し（離すとゆっくり戻る）
+  const px = Math.cos(a)*55, pz = Math.sin(a)*55;
+  const py = 9 + Math.sin(t*0.25)*1.6;
+  const a2 = a + 0.13;
+  const lx = Math.cos(a2)*55, lz = Math.sin(a2)*55;
+  const ly = 9 + Math.sin(t*0.25 + 0.4)*1.6;
   if(!dragging){ idleTime += 1/60; if(idleTime > 1.5){ lookYaw *= 0.995; lookPitch *= 0.99; } }
   const dx = lx-px, dy = ly-py, dz = lz-pz;
   const yaw0 = Math.atan2(-dz, dx) + lookYaw;
@@ -638,48 +649,36 @@ function frame(now){
 
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  gl.useProgram(terrainProg); setStd(terrainProg, proj, view, t); drawObj(terrainObj);
-  gl.useProgram(kelpProg); setStd(kelpProg, proj, view, t); drawObj(kelpObj);
-  gl.useProgram(simpleProg); setStd(simpleProg, proj, view, t);
-  if(simpleProg.u.uModel) gl.uniformMatrix4fv(simpleProg.u.uModel, false, IDENT);
-  drawObj(rockObj);
-  // マンタ
-  const ma = t * mantaPath.sp;
-  const mx = mantaPath.cx + Math.cos(ma)*mantaPath.r, mz = mantaPath.cz + Math.sin(ma)*mantaPath.r;
-  const mHead = Math.atan2(Math.cos(ma), -Math.sin(ma));
-  const mModel = mModel(mx, mantaPath.y + Math.sin(t*0.5)*0.8, mz, -mHead, 1.6, 0.32, 0);
-  if(simpleProg.u.uModel) gl.uniformMatrix4fv(simpleProg.u.uModel, false, mModel);
-  drawObj(mantaObj);
-  // 水面
-  gl.useProgram(surfProg); setStd(surfProg, proj, view, t); drawObj(surfObj);
-  // 魚
-  gl.useProgram(fishProg); setStd(fishProg, proj, view, t);
-  for(const f of schools){
+  // 空（奥に固定）
+  gl.depthMask(false);
+  gl.useProgram(skyProg); setStd(skyProg, proj, view, t); drawObj(skyObj);
+  gl.depthMask(true);
+  // 雲海・浮島・雲
+  gl.useProgram(seaProg); setStd(seaProg, proj, view, t); drawObj(seaObj);
+  gl.useProgram(isleProg); setStd(isleProg, proj, view, t); drawObj(isleObj);
+  gl.useProgram(cloudProg); setStd(cloudProg, proj, view, t); drawObj(cloudObj);
+  // 鳥
+  gl.useProgram(birdProg); setStd(birdProg, proj, view, t);
+  for(const f of flocks){
     const fa = t * f.sp + f.ph;
-    const fx = f.cx + Math.cos(fa)*f.r, fz = f.cz + Math.sin(fa)*f.r;
-    const fy = f.y + Math.sin(t*0.8 + f.bobPh)*0.7;
-    const head = Math.atan2(Math.cos(fa), -Math.sin(fa));
-    if(fishProg.u.uModel) gl.uniformMatrix4fv(fishProg.u.uModel, false, mModel(fx, fy, fz, -head, f.s, 0, 0));
-    if(fishProg.u.uPhase) gl.uniform1f(fishProg.u.uPhase, f.ph*3.0);
-    if(fishProg.u.uCol) gl.uniform3f(fishProg.u.uCol, f.col[0], f.col[1], f.col[2]);
-    drawObj(fishObj);
+    const fx = Math.cos(fa)*f.r, fz = Math.sin(fa)*f.r;
+    const fy = f.y + Math.sin(t*0.9 + f.flapPh)*0.5;
+    const head = Math.atan2(Math.cos(fa) * Math.sign(f.sp), -Math.sin(fa) * Math.sign(f.sp));
+    if(birdProg.u.uModel) gl.uniformMatrix4fv(birdProg.u.uModel, false, mModel(fx, fy, fz, -head, f.s, 0, 0));
+    if(birdProg.u.uPhase) gl.uniform1f(birdProg.u.uPhase, f.flapPh);
+    if(birdProg.u.uCol) gl.uniform3f(birdProg.u.uCol, f.col[0], f.col[1], f.col[2]);
+    drawObj(birdObj);
   }
-  // 光の筋（加算）
-  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE); gl.depthMask(false);
-  gl.useProgram(rayProg); setStd(rayProg, proj, view, t); drawObj(rayObj);
-  gl.depthMask(true); gl.disable(gl.BLEND);
-  // 雪と泡
+  // 滝（半透明）
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+  gl.useProgram(fallProg); setStd(fallProg, proj, view, t); drawObj(fallObj);
+  // 光の粒
   gl.useProgram(pointProg); setStd(pointProg, proj, view, t);
-  if(pointProg.u.uRise) gl.uniform1f(pointProg.u.uRise, -0.55);
-  if(pointProg.u.uSize) gl.uniform1f(pointProg.u.uSize, 2.6);
-  if(pointProg.u.uCol) gl.uniform3f(pointProg.u.uCol, 0.85, 0.93, 0.97);
-  if(pointProg.u.uAlpha) gl.uniform1f(pointProg.u.uAlpha, 0.5);
-  drawObj(snowObj);
-  if(pointProg.u.uRise) gl.uniform1f(pointProg.u.uRise, 2.4);
-  if(pointProg.u.uSize) gl.uniform1f(pointProg.u.uSize, 3.4);
+  if(pointProg.u.uRise) gl.uniform1f(pointProg.u.uRise, 0.35);
+  if(pointProg.u.uSize) gl.uniform1f(pointProg.u.uSize, 2.4);
+  if(pointProg.u.uCol) gl.uniform3f(pointProg.u.uCol, 1.0, 0.92, 0.62);
   if(pointProg.u.uAlpha) gl.uniform1f(pointProg.u.uAlpha, 0.55);
-  drawObj(bubbleObj);
+  drawObj(sparkObj);
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
 requestAnimationFrame(frame);
