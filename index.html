@@ -82,7 +82,11 @@ function prog(vs, fs){
   gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
   gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
   gl.linkProgram(p);
-  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){ console.warn(gl.getProgramInfoLog(p)); }
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    console.warn(gl.getProgramInfoLog(p));
+    const m = document.getElementById("msg");
+    if(m){ m.style.display = "flex"; m.style.color = "#ff9a9a"; m.textContent = "シェーダのリンクに失敗しました: " + gl.getProgramInfoLog(p); }
+  }
   p.u = {};
   const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
   for(let i=0;i<n;i++){ const info = gl.getActiveUniform(p, i); p.u[info.name] = gl.getUniformLocation(p, info.name); }
@@ -250,7 +254,7 @@ const cloudProg = prog([
 
 const fallProg = prog([
   "attribute vec3 aPos; attribute vec2 aUv; attribute float aPhase;",
-  "uniform mat4 uProj, uView; uniform float uTime;",
+  "uniform mat4 uProj, uView; uniform mediump float uTime;",
   "varying vec2 vUv; varying float vDepth;",
   "void main(){",
   "  vec3 p = aPos;",
@@ -275,7 +279,7 @@ const fallProg = prog([
 
 const birdProg = prog([
   "attribute vec3 aPos; attribute float aWing;",
-  "uniform mat4 uProj, uView, uModel; uniform float uTime; uniform float uPhase; uniform vec3 uCol;",
+  "uniform mat4 uProj, uView, uModel; uniform mediump float uTime; uniform mediump float uPhase; uniform mediump vec3 uCol;",
   "varying float vDepth; varying float vShade;",
   "void main(){",
   "  vec3 p = aPos;",
